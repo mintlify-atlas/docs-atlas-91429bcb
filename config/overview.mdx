@@ -1,0 +1,96 @@
+---
+title: "Configuration overview"
+description: "How C2ME's configuration file works, what sections it contains, and how to override values at runtime."
+---
+
+C2ME generates a configuration file at `config/c2me.toml` inside your Minecraft instance directory the first time it loads. The file uses [TOML](https://toml.io) format, parsed and written by the [night-config](https://github.com/TheElectronWill/night-config) library.
+
+## How the config file works
+
+- **Auto-generated** — if `c2me.toml` does not exist, C2ME writes it with all defaults on startup.
+- **Auto-saved** — C2ME saves the file after reading it during initialization.
+- **Unknown keys are purged** — any key not recognized by the current version of C2ME is removed from the file on save. This keeps the file clean after updates.
+- **Config version** — the file contains a `version` field. The current config version is `3`. If this value does not match, C2ME resets the file to defaults and logs a warning.
+
+```toml
+version = 3
+
+[chunkSystem]
+# ...
+
+[generalOptimizations]
+# ...
+```
+
+## System property overrides
+
+You can override any config value at JVM startup without editing the file. Set a system property using the pattern:
+
+```
+-Dc2me.base.config.override.<key>=<value>
+```
+
+For example, to disable async serialization:
+
+```
+-Dc2me.base.config.override.chunkSystem.asyncSerialization=false
+```
+
+This is useful for testing or for server launchers that manage config externally.
+
+<Note>
+  System property overrides take precedence over values in `c2me.toml`. The override is logged at startup.
+</Note>
+
+## Incompatibility detection
+
+C2ME automatically disables certain config options when it detects a conflicting mod. C2ME itself defines some of these checks (for example, `generalOptimizations.midTickChunkTasksInterval` is disabled when Dimensional Threading is present).
+
+Third-party mods can also declare incompatible config keys in their `fabric.mod.json` metadata using the `c2me:incompatibleConfig` custom value:
+
+```json
+{
+  "custom": {
+    "c2me:incompatibleConfig": [
+      "chunkSystem.someOption"
+    ]
+  }
+}
+```
+
+When a conflict is detected, the affected key is set to its safe incompatible default and a comment explaining the reason is written into `c2me.toml`.
+
+<Tip>
+  To ignore all incompatibility checks (not recommended for production), set the system property `-Dcom.ishland.c2me.base.config.ignoreIncompatibility=true`.
+</Tip>
+
+## Config sections
+
+| Section | Description |
+|---|---|
+| `chunkSystem` | Chunk loading, scheduling, serialization, and memory behavior |
+| `generalOptimizations` | Mid-tick chunk tasks and auto-save mode |
+| `ioSystem` | Async I/O implementation, GC-free serializer, and NBT cache limits |
+| `vanillaWorldGenOptimizations` | Density function compiler, native SIMD acceleration, and vanilla-specific optimizations |
+| `noTickViewDistance` | No-tick view distance chunk loading and render distance protocol |
+| `clientSideConfig` | Client-side view distance cap and extended render distance protocol |
+| `fixes` | Safety checks for threading issues and shutdown hook behavior |
+| *(top-level)* | `globalExecutorParallelism`, `threadPoolPriority`, `defaultGlobalExecutorParallelismExpression` — thread pool configuration |
+
+<CardGroup cols={2}>
+  <Card title="Chunk system" icon="cubes" href="/config/chunk-system">
+    Async serialization, error recovery, POI unloading, fluid post-processing, and scheduling options.
+  </Card>
+  <Card title="World generation optimizations" icon="microchip" href="/config/worldgen-optimizations">
+    Density function compiler and native SIMD acceleration for faster terrain generation.
+  </Card>
+  <Card title="I/O system" icon="hard-drive" href="/config/io-system">
+    Tune the in-memory NBT cache used by the chunk I/O worker.
+  </Card>
+  <Card title="No-tick view distance" icon="eye" href="/config/no-tick-view-distance">
+    Control how chunks beyond the simulation distance are sent to clients.
+  </Card>
+  <Card title="General optimizations" icon="gauge" href="/config/general-optimizations">
+    Mid-tick chunk tasks, auto-save strategy, and client view distance cap.
+  </Card>
+</CardGroup>

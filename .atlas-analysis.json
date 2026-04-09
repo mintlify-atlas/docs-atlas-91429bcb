@@ -1,0 +1,91 @@
+{
+  "projectType": "general",
+  "projectName": "C2ME-fabric",
+  "projectDescription": "A Fabric mod that dramatically improves Minecraft chunk generation, I/O, and loading performance by leveraging multi-core parallelism.",
+  "theme": "aspen",
+  "primaryColor": "#c13f3a",
+  "lightColor": "#e5ccb1",
+  "darkColor": "#2d343a",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "installation",
+              "compatibility"
+            ]
+          },
+          {
+            "group": "Configuration",
+            "pages": [
+              "config/overview",
+              "config/chunk-system",
+              "config/worldgen-optimizations",
+              "config/io-system",
+              "config/no-tick-view-distance",
+              "config/general-optimizations"
+            ]
+          },
+          {
+            "group": "Modules",
+            "pages": [
+              "modules/overview",
+              "modules/chunk-system-rewrite",
+              "modules/worldgen",
+              "modules/chunk-io",
+              "modules/threading",
+              "modules/native-acceleration"
+            ]
+          },
+          {
+            "group": "Guides",
+            "pages": [
+              "guides/performance-tuning",
+              "guides/mod-compatibility",
+              "guides/building-from-source",
+              "guides/troubleshooting"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Parallel chunk generation using multiple CPU cores",
+    "Async chunk I/O with configurable caching",
+    "Rewritten chunk system for improved scheduling and throughput",
+    "Density function compiler (JVM bytecode) for faster world generation",
+    "Native SIMD acceleration (AVX2/AVX512) for math-heavy worldgen",
+    "No-tick view distance support with extended render distance protocol",
+    "Threading fixes for vanilla worldgen and general thread safety",
+    "Configurable auto-save modes (VANILLA, ENHANCED, PERIODIC)",
+    "POI unloading to prevent memory leaks in long-running worlds",
+    "Fluid post-processing optimizations to reduce server tick spikes"
+  ],
+  "publicApiSurface": [
+    "c2me.toml config: generalOptimizations.midTickChunkTasksInterval",
+    "c2me.toml config: generalOptimizations.autoSave.mode (VANILLA/ENHANCED/PERIODIC)",
+    "c2me.toml config: chunkSystem.asyncSerialization",
+    "c2me.toml config: chunkSystem.allowPOIUnloading",
+    "c2me.toml config: chunkSystem.syncPlayerTickets",
+    "c2me.toml config: chunkSystem.fluidPostProcessingToScheduledTick",
+    "c2me.toml config: chunkSystem.lowMemoryMode",
+    "c2me.toml config: ioSystem.chunkDataCacheSoftLimit",
+    "c2me.toml config: ioSystem.chunkDataCacheLimit",
+    "c2me.toml config: vanillaWorldGenOptimizations.useDensityFunctionCompiler",
+    "c2me.toml config: vanillaWorldGenOptimizations.nativeAcceleration.enabled",
+    "c2me.toml config: vanillaWorldGenOptimizations.nativeAcceleration.allowAVX512",
+    "c2me.toml config: noTickViewDistance.maxConcurrentChunkLoads",
+    "c2me.toml config: noTickViewDistance.enableExtRenderDistanceProtocol",
+    "c2me.toml config: noTickViewDistance.smoothChunkSendingRate",
+    "c2me.toml config: clientSideConfig.modifyMaxVDConfig.enabled",
+    "c2me.toml config: fixes.enforceSafeWorldRandomAccess",
+    "Fabric mod metadata key: c2me:incompatibleConfig (array of config keys)",
+    "System property: c2me.base.config.override.<key>",
+    "System property: com.ishland.c2me.base.config.ignoreIncompatibility"
+  ]
+}

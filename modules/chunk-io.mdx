@@ -1,0 +1,60 @@
+---
+title: "Chunk I/O optimizations"
+description: "C2ME moves chunk reads and writes off the main server thread and keeps hot chunk data in memory to reduce disk pressure."
+---
+
+Chunk I/O is the process of reading chunk data from disk when a chunk loads and writing it back when a chunk saves. In vanilla Minecraft, both operations happen on the main server thread, which means a slow disk stalls the tick loop. C2ME addresses this with two modules: `c2me-rewrites-chunkio` and `c2me-opts-chunkio`.
+
+## Async chunk I/O (`c2me-rewrites-chunkio`)
+
+The rewritten I/O layer (`ioSystem.replaceImpl`, default: `true`) moves chunk reads and writes onto background threads. When the chunk system requests a chunk from disk, it submits an async read task and continues scheduling other work. The chunk data is delivered to the chunk loading pipeline when the read completes, without blocking any server tick.
+
+Writes are similarly deferred: when a chunk is serialized, the resulting NBT is handed off to an async write queue rather than written synchronously on the main thread.
+
+This has a large effect during:
+- **Server startup** — loading pre-generated chunks on startup happens in parallel with tick loop work
+- **Pre-generation** — tools like Chunky can issue many parallel read/write requests without stalling the server
+- **Normal play** — player movement that reveals new chunks doesn't block the tick loop waiting for disk
+
+## NBT cache (`c2me-opts-chunkio`)
+
+`c2me-opts-chunkio` adds an in-memory cache of raw chunk NBT data in the I/O worker. When a chunk is requested from disk that is already in the cache, C2ME serves it from memory without touching the filesystem. This is particularly effective for "hot" chunks that are repeatedly unloaded and reloaded — common at chunk borders near a player's view distance edge.
+
+The cache has two configurable limits:
+
+| Key | Default | Description |
+|---|---|---|
+| `ioSystem.chunkDataCacheSoftLimit` | `8192` | Soft limit (entries). The cache may hold up to this many entries under normal conditions. |
+| `ioSystem.chunkDataCacheLimit` | `32678` | Hard limit (entries). The cache will not grow beyond this number of entries. |
+
+Both values represent the number of chunk data entries (one entry per chunk position), not bytes. A higher soft limit means more chunks stay cached between loads; a higher hard limit allows the cache to grow further during burst loads before entries are evicted.
+
+### When to adjust cache limits
+
+The default values work well for most servers. Consider raising them if you:
+
+- Run a server with a high view distance (32+ chunks) and notice repeated disk reads for the same chunks
+- Are running a pre-generator and want to maximize I/O throughput by keeping recently written chunks warm
+- Have ample free memory that would otherwise go unused
+
+Consider lowering them if your server has very little RAM and you need to leave more memory for gameplay rather than the I/O cache.
+
+```toml
+[ioSystem]
+replaceImpl = true
+chunkDataCacheSoftLimit = 8192
+chunkDataCacheLimit = 32678
+```
+
+<Note>
+  The NBT cache stores raw serialized chunk data, not parsed chunk objects. Its memory footprint is much smaller than holding live `Chunk` instances. Even at the hard limit, the cache typically consumes well under 1 GiB of heap on a standard server.
+</Note>
+
+## Interaction between the two modules
+
+`c2me-rewrites-chunkio` handles when and on which thread reads and writes happen. `c2me-opts-chunkio` handles whether a read is necessary at all. Together, they form a two-level strategy:
+
+1. Check the NBT cache first (fast, in-memory, no thread coordination needed)
+2. If not cached, issue an async disk read on a background thread
+
+Both modules are enabled by default and complement each other.

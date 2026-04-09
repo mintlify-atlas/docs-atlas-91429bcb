@@ -1,0 +1,95 @@
+---
+title: "Mod compatibility"
+description: "Overview of C2ME's compatibility with datapacks, world generation mods, and known incompatible mods."
+---
+
+## Datapacks and world generation mods
+
+World generation datapacks that run on vanilla Minecraft are **fully supported** by C2ME without any configuration changes.
+
+Custom world generators implemented in mods generally run well, but may cause compatibility issues. C2ME's parallelism breaks certain design assumptions that some mod authors rely on — for example, accessing shared mutable state without synchronization. If you are a world generation mod author and your mod breaks with C2ME, reach out on the [Discord server](https://discord.gg/Kdy8NM5HW4) for help. The team is willing to help mod authors adopt scalable, thread-safe world generation patterns.
+
+## Undefined behavior sanitization
+
+C2ME includes runtime detections that catch common threading mistakes before they cause silent data corruption or undebuggable crashes:
+
+- **`CheckedThreadLocalRandom`** — replaces the world random to detect mods that access it from the wrong thread (this detection is also available standalone as [UWRAD](https://modrinth.com/mod/uwrad))
+- **Off-thread access detection** — additional checks for other Minecraft internals that must not be accessed from non-main threads
+
+<Note>
+  These detections are designed to have no false positives. If one fires, it indicates a real thread-safety bug in the triggering mod. Report it to that mod's author rather than disabling the detection in C2ME.
+</Note>
+
+## Known incompatible mods
+
+Some mods conflict with specific C2ME features. C2ME automatically disables the conflicting feature when it detects these mods at load time, so you do not need to take action unless the automatic behavior is not what you want.
+
+<AccordionGroup>
+  <Accordion title="dimthread — incompatible with mid-tick chunk task scheduling">
+    The `generalOptimizations.midTickChunkTasksInterval` config option is incompatible with [Dimensional Threading (dimthread)](https://www.curseforge.com/minecraft/mc-mods/dimensional-threading). When dimthread is detected, C2ME sets this value to `-1` (disabled) automatically.
+
+    If you want to keep mid-tick chunk tasks enabled despite using dimthread, you can force it on by setting the value explicitly in `config/c2me.toml` — but this is not recommended and may cause instability.
+  </Accordion>
+  <Accordion title="lightbench — disables threaded lighting">
+    The `c2me-threading-lighting` module is automatically disabled when [lightbench](https://modrinth.com/mod/lightbench) is loaded. Both mods replace the lighting engine, and only one can be active at a time. lightbench takes priority.
+  </Accordion>
+  <Accordion title="bobby — disables maximum view distance modifier">
+    The `c2me-client-uncapvd` module (which raises the maximum client-side view distance) is automatically disabled when [Bobby](https://modrinth.com/mod/bobby) is loaded. Bobby manages its own extended view distance system and the two features conflict.
+  </Accordion>
+  <Accordion title="iris older than 1.10.2 — disables maximum view distance modifier">
+    The `c2me-client-uncapvd` module is automatically disabled when Iris versions older than 1.10.2 are detected. Iris 1.10.2 and later are compatible. Upgrade Iris to resolve this.
+  </Accordion>
+  <Accordion title="cavetweaks — disables aquifer optimization">
+    The `vanillaWorldGenOptimizations.optimizeAquifer` config option is automatically disabled when cavetweaks is loaded, as the two mods modify the same aquifer generation code.
+  </Accordion>
+  <Accordion title="biolith — disables End biome cache">
+    The `vanillaWorldGenOptimizations.useEndBiomeCache` option is automatically disabled when biolith is loaded, since biolith provides its own biome handling for The End.
+  </Accordion>
+  <Accordion title="porting_lib — disables StructureWeightSampler optimization">
+    The `vanillaWorldGenOptimizations.optimizeStructureWeightSampler` option is automatically disabled when porting_lib is present due to conflicting modifications to the structure weight sampler.
+  </Accordion>
+  <Accordion title="textile_backup — disables logging shutdown hook fix">
+    The `fixes.disableLoggingShutdownHook` option is automatically disabled when [Textile Backup](https://modrinth.com/mod/textile_backup) is loaded. Textile Backup requires the default JVM shutdown hook behavior to complete backup tasks on server stop.
+  </Accordion>
+  <Accordion title="architectury — disables GC-free chunk serializer">
+    The experimental `ioSystem.gcFreeChunkSerializer` option is automatically disabled when [Architectury](https://modrinth.com/mod/architectury-api) is present. Architectury modifies chunk serialization in a way that is incompatible with C2ME's reduced-allocation serializer. The standard serialization path remains fully functional.
+  </Accordion>
+</AccordionGroup>
+
+## Declaring incompatibility from your mod
+
+If you are a mod author and one of your config keys conflicts with a specific C2ME feature, you can declare that incompatibility directly in your mod's `fabric.mod.json`. C2ME reads a custom key named `c2me:incompatibleConfig` at startup and disables any listed config keys automatically.
+
+```json fabric.mod.json
+{
+  "custom": {
+    "c2me:incompatibleConfig": [
+      "vanillaWorldGenOptimizations.optimizeAquifer",
+      "generalOptimizations.midTickChunkTasksInterval"
+    ]
+  }
+}
+```
+
+The value must be a JSON array of strings. Each string is a dot-separated C2ME config key path, matching the keys you see in `config/c2me.toml`.
+
+## Bypassing incompatibility checks
+
+<Warning>
+  Bypassing incompatibility checks is not recommended. It can cause silent world corruption, crashes, or other hard-to-diagnose problems. Only use this if you know what you are doing.
+</Warning>
+
+You can instruct C2ME to ignore all detected incompatibilities by setting the following JVM system property:
+
+```text JVM argument
+-Dcom.ishland.c2me.base.config.ignoreIncompatibility=true
+```
+
+Add this to your JVM arguments (e.g., in your launcher profile or server startup script). When set, C2ME logs a warning for each detected incompatibility but does not disable the affected config key.
+
+## Getting help
+
+If you encounter a compatibility issue not listed here, you can:
+
+- Open an issue on the [GitHub issue tracker](https://github.com/RelativityMC/C2ME-fabric/issues)
+- Ask in the [Discord server](https://discord.gg/Kdy8NM5HW4) — the team and community can help diagnose whether the problem is in C2ME or another mod

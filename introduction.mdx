@@ -1,0 +1,58 @@
+---
+title: "Introduction"
+description: "C2ME (Concurrent Chunk Management Engine) is a Fabric mod that improves Minecraft chunk generation, I/O, and loading through multi-threaded parallelism."
+---
+
+C^2M-Engine, or **C2ME** for short, stands for **Concurrent Chunk Management Engine**. It is a Fabric mod designed to improve the performance of chunk generation, I/O, and loading by taking advantage of multiple CPU cores in parallel.
+
+## What C2ME does
+
+Minecraft's chunk pipeline is the main bottleneck on both servers and clients when it comes to world exploration and pre-generation. C2ME targets three areas:
+
+- **Chunk generation** — terrain, biomes, structures, and features are generated across multiple threads in parallel rather than sequentially on the main thread
+- **Chunk I/O** — reading and writing region files is handled asynchronously so that disk operations do not block the server tick
+- **Chunk loading** — the chunk system scheduler is rewritten from the ground up to maximize throughput and minimize latency
+
+## Modules overview
+
+C2ME is split into focused modules that you can inspect and configure independently:
+
+| Module | Purpose |
+|---|---|
+| `c2me-rewrites-chunk-system` | Core rewrite of the chunk system scheduler enabling parallel chunk work |
+| `c2me-opts-worldgen-vanilla` | Optimizations for vanilla world generation (aquifer, End biome cache, structure weight sampler) |
+| `c2me-opts-worldgen-general` | General world generation optimizations shared across generators |
+| `c2me-opts-chunkio` | Asynchronous chunk I/O and serialization improvements |
+| `c2me-threading-lighting` | Threaded light updates to reduce lighting overhead on the main thread |
+| `c2me-notickvd` | No-tick view distance support to load chunks beyond the ticking radius |
+| `c2me-opts-natives-math` | Native (JNI/SIMD) accelerated math routines for world generation noise |
+| `c2me-fixes-worldgen-vanilla-bugs` | Fixes for vanilla world generation bugs |
+| `c2me-fixes-worldgen-threading-issues` | Fixes for thread-safety issues in world generation |
+| `c2me-fixes-general-threading-issues` | Fixes for general threading issues across the game |
+
+## Vanilla parity
+
+C2ME does not sacrifice vanilla functionality or behavior, and does not alter vanilla world generation in the name of raw speed by default.
+
+<Note>
+  Due to the [non-determinism of vanilla world generation](https://bugs.mojang.com/browse/MC-55596), worlds will vary significantly run-to-run even with the same seed. This is expected and is not a bug introduced by C2ME — it is a known upstream issue in Minecraft itself.
+</Note>
+
+If you encounter a case where C2ME deviates from intended vanilla behavior, open an issue on the [GitHub issue tracker](https://github.com/RelativityMC/C2ME-fabric/issues).
+
+## Where to go next
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Install C2ME on your Fabric instance and get it running in minutes.
+  </Card>
+  <Card title="Configuration" icon="sliders" href="/config/overview">
+    Tune C2ME's thread pool, scheduling, and per-module settings.
+  </Card>
+  <Card title="Module overview" icon="puzzle-piece" href="/modules/overview">
+    Understand what each module does and when to enable or disable it.
+  </Card>
+  <Card title="Performance tuning" icon="gauge-high" href="/guides/performance-tuning">
+    Get hardware-specific recommendations for maximum throughput.
+  </Card>
+</CardGroup>

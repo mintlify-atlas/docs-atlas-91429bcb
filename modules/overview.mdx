@@ -1,0 +1,97 @@
+---
+title: "Module overview"
+description: "C2ME is split into focused modules, each targeting a specific part of the chunk pipeline. This page groups every module by category and links to detailed pages."
+---
+
+C2ME is not a single monolithic patch — it is a collection of independent modules. Each module targets a specific subsystem: chunk scheduling, world generation, disk I/O, lighting, or threading safety. Modules can be individually enabled or disabled through `config/c2me.toml`, and some are automatically disabled when incompatible mods are detected.
+
+## Module categories
+
+<AccordionGroup>
+  <Accordion title="Core">
+    | Module | Description |
+    |---|---|
+    | `c2me-base` | Core infrastructure shared by every other module: configuration system, global thread executors, mixin helpers, and the scheduling manager. |
+  </Accordion>
+
+  <Accordion title="Chunk system rewrites">
+    | Module | Description |
+    |---|---|
+    | `c2me-rewrites-chunk-system` | Replaces the vanilla chunk scheduler with a parallel implementation backed by the FlowSched task scheduler. |
+    | `c2me-rewrites-chunkio` | Replaces the vanilla chunk I/O layer with an async implementation. Controlled by `ioSystem.replaceImpl`. |
+    | `c2me-rewrites-chunk-serializer` | Experimental GC-friendly chunk serializer that reduces allocations during saves. Controlled by `ioSystem.gcFreeChunkSerializer`. |
+  </Accordion>
+
+  <Accordion title="World generation optimizations">
+    | Module | Description |
+    |---|---|
+    | `c2me-opts-worldgen-general` | Parallel feature placement and general world generation throughput improvements. Always enabled. |
+    | `c2me-opts-worldgen-vanilla` | Vanilla-specific world generation optimizations. |
+    | `c2me-opts-worldgen-biome-cache` | Reduces redundant biome lookups during chunk generation. |
+    | `c2me-opts-dfc` | Density function compiler: compiles world generation density functions to JVM bytecode so the JIT can optimize them. Controlled by `vanillaWorldGenOptimizations.useDensityFunctionCompiler`. |
+    | `c2me-opts-natives-math` | Bundles a native C library that accelerates noise sampling and other math-heavy operations using SIMD (AVX2/AVX512 on x86-64, NEON on AArch64). |
+  </Accordion>
+
+  <Accordion title="I/O optimizations">
+    | Module | Description |
+    |---|---|
+    | `c2me-opts-chunkio` | In-memory NBT cache for chunk data, reducing disk reads for hot chunks. Controlled by `ioSystem.chunkDataCacheSoftLimit` and `ioSystem.chunkDataCacheLimit`. |
+  </Accordion>
+
+  <Accordion title="Scheduling and performance">
+    | Module | Description |
+    |---|---|
+    | `c2me-opts-allocs` | Reduces object allocations during chunk generation to lower GC pressure. Always enabled. |
+    | `c2me-opts-math` | Pure-Java math optimizations for environments where native acceleration is unavailable. Always enabled. |
+    | `c2me-opts-scheduling` | Mid-tick chunk task execution and enhanced auto-save scheduling. |
+  </Accordion>
+
+  <Accordion title="View distance">
+    | Module | Description |
+    |---|---|
+    | `c2me-notickvd` | Sends chunks beyond the simulation distance to clients without ticking them. Supports extended render distance protocol (>127 chunks). |
+    | `c2me-client-uncapvd` | Client-side: raises the maximum render distance allowed in game options. Automatically disabled when Bobby or Iris &lt;1.10.2 is present. |
+  </Accordion>
+
+  <Accordion title="Threading">
+    | Module | Description |
+    |---|---|
+    | `c2me-threading-lighting` | Computes sky and block light in parallel on worker threads. Automatically disabled when LightBench is present. |
+  </Accordion>
+
+  <Accordion title="Server utilities">
+    | Module | Description |
+    |---|---|
+    | `c2me-server-utils` | Miscellaneous server-side utilities. Always enabled. |
+  </Accordion>
+
+  <Accordion title="Bug fixes and safety">
+    | Module | Description |
+    |---|---|
+    | `c2me-fixes-worldgen-threading-issues` | Detects and enforces safe world random access. Helps diagnose "Accessing LegacyRandomSource from multiple threads" crashes. |
+    | `c2me-fixes-general-threading-issues` | Fixes general threading hazards that surface when chunk work runs off-thread. |
+    | `c2me-fixes-chunkio-threading-issues` | Fixes threading issues specific to chunk I/O. |
+    | `c2me-fixes-worldgen-vanilla-bugs` | Patches known vanilla world generation bugs. |
+    | `FlowSched` | Bundled task scheduling library used by the chunk system rewrite. |
+  </Accordion>
+</AccordionGroup>
+
+## Detailed pages
+
+<CardGroup cols={2}>
+  <Card title="Chunk system rewrite" icon="arrows-rotate" href="/modules/chunk-system-rewrite">
+    Parallel chunk loading, async serialization, and POI unloading.
+  </Card>
+  <Card title="World generation optimizations" icon="mountain" href="/modules/worldgen">
+    Density function compiler, biome cache, and parallel feature placement.
+  </Card>
+  <Card title="Chunk I/O optimizations" icon="hard-drive" href="/modules/chunk-io">
+    In-memory NBT cache and async chunk reads and writes.
+  </Card>
+  <Card title="Threading and lighting" icon="bolt" href="/modules/threading">
+    Threaded lighting, no-tick view distance, and threading safety fixes.
+  </Card>
+  <Card title="Native math acceleration" icon="microchip" href="/modules/native-acceleration">
+    SIMD-accelerated noise sampling, allocation optimizations, and math fallbacks.
+  </Card>
+</CardGroup>

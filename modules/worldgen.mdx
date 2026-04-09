@@ -1,0 +1,56 @@
+---
+title: "World generation optimizations"
+description: "C2ME accelerates world generation through a density function compiler, biome caching, parallel feature placement, and vanilla-specific optimizations."
+---
+
+World generation is the most CPU-intensive part of Minecraft's chunk pipeline. C2ME targets it with four modules: `c2me-opts-worldgen-general`, `c2me-opts-worldgen-vanilla`, `c2me-opts-worldgen-biome-cache`, and `c2me-opts-dfc`. Together these modules cut terrain generation time by making the math faster, reducing redundant lookups, and letting the JIT compiler do a better job.
+
+## Density function compiler (`c2me-opts-dfc`)
+
+### What density functions are
+
+Since 1.18, Minecraft represents terrain shape as a tree of [density functions](https://minecraft.wiki/w/Density_function). A density function takes a block position and returns a floating-point value. The terrain generator samples these functions at every position in a chunk to decide where stone, air, and water belong. Vanilla evaluates this tree in interpreted Java, which limits how aggressively the JIT compiler can optimize it.
+
+### How the compiler works
+
+`c2me-opts-dfc` walks the density function tree from a datapack (including vanilla's own built-in generation) and compiles it into a new Java class at runtime using bytecode generation. The compiled class contains straight-line Java bytecode with no virtual dispatch overhead, no intermediate allocations, and no tree traversal. Because the JIT sees a simple flat method with predictable types, it can apply optimizations like inlining, loop unrolling, and SIMD auto-vectorization that it cannot apply to the interpreted tree.
+
+All density function types provided by vanilla are supported by the compiler. The resulting classes are loaded into a dedicated classloader and cached for the lifetime of the world.
+
+### Limitation: pre-1.18 chunk upgrades
+
+When Minecraft upgrades a chunk from a pre-1.18 format, it uses a legacy code path that the compiler does not support. In those cases, C2ME automatically falls back to the unoptimized (interpreted) density function evaluation. This only affects chunk upgrades from very old worlds; normal generation and newly created worlds are always compiled.
+
+### Configuration
+
+```toml
+[vanillaWorldGenOptimizations]
+useDensityFunctionCompiler = true
+```
+
+Setting `vanillaWorldGenOptimizations.useDensityFunctionCompiler` to `false` disables the compiler and reverts to vanilla's interpreted density function evaluation. You would rarely need to do this, but it can help isolate issues when investigating world generation bugs with custom datapacks.
+
+## General world generation optimizations (`c2me-opts-worldgen-general`)
+
+This module is always enabled. It improves world generation throughput through:
+
+- **Parallel feature placement** — Structure and feature decoration (trees, ores, flowers, etc.) can be distributed across worker threads. Vanilla processes features sequentially; C2ME allows independent chunks to decorate in parallel, which is particularly visible during pregenerator runs.
+- **Thread-safe random access** — Decoration in parallel requires that random number access be safe from multiple threads. This module works alongside `c2me-fixes-worldgen-threading-issues` to ensure correctness when mods access world random sources during feature placement.
+
+## Vanilla-specific optimizations (`c2me-opts-worldgen-vanilla`)
+
+This module contains optimizations that are specific to Minecraft's built-in world generation. It targets known bottlenecks in vanilla's terrain and structure generators that are not addressable through the density function compiler alone.
+
+## Biome cache (`c2me-opts-worldgen-biome-cache`)
+
+Biome lookups are frequent during chunk generation. Every feature, structure check, and surface rule query needs to know the biome at a given position. The biome cache module adds a per-thread lookup cache that avoids redundant sampling of the biome source for positions that were queried recently within the same generation task.
+
+This is particularly effective during feature placement, where the same biome is queried many times for nearby positions within a single chunk.
+
+## Threading and safety
+
+World generation in C2ME runs on a shared background thread pool. This means multiple chunks are generated concurrently on different threads. Mods that access world state (block reads, random sources, structure data) during world generation must do so in a thread-safe way. The `c2me-fixes-worldgen-threading-issues` module (see [Threading and lighting](/modules/threading)) detects and enforces safe access patterns.
+
+<Tip>
+  If you use custom datapacks or worldgen mods and observe crashes with "Accessing LegacyRandomSource from multiple threads", see the threading fixes section in [Threading and lighting](/modules/threading).
+</Tip>

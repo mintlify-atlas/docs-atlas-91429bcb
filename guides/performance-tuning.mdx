@@ -1,0 +1,137 @@
+---
+title: "Performance tuning"
+description: "C2ME works well out of the box, but these settings let you squeeze more throughput from specific hardware configurations."
+---
+
+C2ME's default configuration is tuned to perform well on most hardware without any changes. This guide covers the knobs that matter most once you have a baseline and want to go further.
+
+## Thread pool configuration
+
+C2ME uses a single global worker pool (called the prioritized scheduler) shared across chunk generation, I/O, and loading. The parallelism of this pool is calculated automatically at startup using the following expression:
+
+```
+max(
+    1,
+    min(
+        cpus / 1.6  (Windows)  or  cpus / 1.3  (Linux/macOS)
+            minus 1 thread on client,
+        (heap_gb - 0.5) / 0.6
+    )
+)
+```
+
+The formula balances CPU count against available heap to avoid memory pressure. You can override the result directly with `globalExecutorParallelism` in `c2me.toml`, or tune the formula by editing `defaultGlobalExecutorParallelismExpression` (accepts variables: `cpus`, `mem_gb`, `is_windows`, `is_j9vm`, `is_client`).
+
+<Tip>
+  On Linux servers with many cores (32+), the automatic value is usually a good starting point. Raise it only if you see idle CPU during heavy chunk generation, and monitor MSPT to ensure the server tick is not crowded out.
+</Tip>
+
+Worker threads run at `Thread.NORM_PRIORITY - 1` (4) by default. You can raise or lower this with `threadPoolPriority` in `c2me.toml`. Values map to Java thread priorities (1–10).
+
+## Mid-tick chunk tasks
+
+```toml c2me.toml
+[generalOptimizations]
+midTickChunkTasksInterval = 100000  # nanoseconds
+```
+
+This option runs a chunk task flush inside the server tick loop every 100 000 ns (100 µs) by default. It keeps chunks loading smoothly when the server has spare tick budget, but it adds overhead to each tick.
+
+- **High-core servers with low MSPT** — leave this at the default or reduce it (e.g., `50000`) to serve chunks faster.
+- **Servers hitting high MSPT** — increase it (e.g., `500000`) or set it to `-1` to disable mid-tick flushing entirely.
+- **Dimthread** — `midTickChunkTasksInterval` is automatically set to `-1` when Dimthread is detected, since Dimthread manages its own scheduling.
+
+## Auto-save mode
+
+```toml c2me.toml
+[generalOptimizations.autoSave]
+mode = "ENHANCED"
+```
+
+| Mode | Behavior |
+|---|---|
+| `ENHANCED` | (Default) Saves after each tick when the server has spare time. Best balance of safety and I/O efficiency. |
+| `VANILLA` | Vanilla 1.18+ behavior — saves during ticking, every tick. High I/O frequency. |
+| `PERIODIC` | Pre-1.18 behavior — saves every 6000 ticks. Lowest I/O frequency; defers saves longer. |
+
+`ENHANCED` is the right choice for most servers. Use `PERIODIC` only if you have confirmed that auto-save I/O is a bottleneck and you are comfortable with up to 5 minutes of un-saved data after a crash.
+
+## Chunk I/O cache
+
+```toml c2me.toml
+[ioSystem]
+chunkDataCacheSoftLimit = 8192
+chunkDataCacheLimit = 32678
+```
+
+The I/O worker keeps recently read chunk NBT data in memory to avoid re-reading from disk. The soft limit triggers a background eviction pass; the hard limit is an absolute cap.
+
+- Default values (`8192` soft / `32678` hard) are appropriate for most servers.
+- If you run a high view distance (e.g., 16+) or are actively pregenerating, raise the soft limit toward `16384` or `32678`.
+- If memory is constrained, lower the soft limit. See [low memory mode](#low-memory-mode) below.
+
+## No-tick view distance concurrency
+
+```toml c2me.toml
+[noTickViewDistance]
+maxConcurrentChunkLoads = <parallelism * 2>
+```
+
+The default is `globalExecutorParallelism * 2`. This controls how many no-tick chunks can be in flight at once.
+
+- **Faster loading** — raise it (e.g., `parallelism * 4`). Uses more memory per in-flight chunk.
+- **Lower latency / memory pressure** — reduce it toward `parallelism`.
+
+## Fluid post-processing
+
+```toml c2me.toml
+[chunkSystem]
+fluidPostProcessingToScheduledTick = true
+filterFluidPostProcessing = true
+```
+
+Both settings are enabled by default. Together they significantly reduce MSPT spikes when new chunks with water or lava are generated. Disabling either can cause visible stutters during active exploration or pregeneration. Leave them enabled unless you have a specific reason to change them.
+
+## Low memory mode
+
+```toml c2me.toml
+[chunkSystem]
+lowMemoryMode = true
+```
+
+When enabled, C2ME aggressively unloads chunks that are not actively being used. This is disabled by default because it reduces throughput. Enable it on servers with less than 4 GiB of heap, or when you see consistent memory pressure from the chunk system.
+
+<Note>
+  `lowMemoryMode` only applies when `chunkSystem.useLegacyScheduling` is `false` (the default).
+</Note>
+
+## Native math acceleration
+
+```toml c2me.toml
+[vanillaWorldGenOptimizations.nativeAcceleration]
+enabled = true
+allowAVX512 = false
+```
+
+Native acceleration uses SIMD (AVX2 by default) to speed up noise evaluation during world generation. Leave `enabled = true` — C2ME falls back to pure Java automatically if the native library fails to load.
+
+`allowAVX512` is off by default because AVX-512 implementations are currently slower than AVX2 on most CPUs. Only enable it if you have benchmarked your specific CPU and confirmed a speedup.
+
+## Companion mods
+
+For maximum performance, pair C2ME with:
+
+- **[Lithium](https://github.com/CaffeineMC/lithium-fabric)** — general-purpose server optimizations that complement C2ME's chunk work (entity ticking, game rules, block entity processing)
+- **[Starlight](https://github.com/Spottedleaf/Starlight)** — lighting engine rewrite; if Starlight is absent, C2ME's `c2me-threading-lighting` module handles threaded lighting
+
+All three mods are compatible with each other and are commonly used together.
+
+## Pregeneration
+
+If you are launching a new server, pregenerate the world before opening it to players. This amortizes the chunk generation cost before players start exploring and eliminates the most common source of high MSPT spikes.
+
+Use [Chunky](https://modrinth.com/plugin/chunky) or the vanilla `/spreadplayers` approach to pregenerate a region. C2ME will parallelize the generation automatically — no additional configuration is needed.
+
+<Tip>
+  During pregeneration, consider raising `noTickViewDistance.maxConcurrentChunkLoads` and `ioSystem.chunkDataCacheSoftLimit` temporarily, then restoring them once pregeneration is complete.
+</Tip>

@@ -1,0 +1,82 @@
+---
+title: "Threading and lighting"
+description: "C2ME computes lighting in parallel, provides no-tick view distance for extended render distances, and enforces thread safety across world generation and I/O."
+---
+
+Running chunk work on background threads introduces threading hazards that don't exist in vanilla. C2ME includes a dedicated group of modules that fix these hazards, compute lighting in parallel, and support no-tick view distances that send chunks to clients without simulating them.
+
+## Threaded lighting (`c2me-threading-lighting`)
+
+Sky and block light propagation is one of the more expensive operations in chunk loading. In vanilla, light is computed on the server thread as chunks reach the lighting stage. C2ME moves this work to background threads, allowing light to be computed in parallel with ongoing generation and I/O.
+
+The module is always enabled unless [LightBench](https://github.com/ishland/lightbench) is present on the classpath. LightBench is a dedicated lighting engine rewrite that supersedes this module; C2ME detects it at startup and disables `c2me-threading-lighting` automatically to avoid conflicts.
+
+<Note>
+  You do not need to configure anything for threaded lighting. If LightBench is installed, C2ME defers to it. Otherwise, threaded lighting is active automatically.
+</Note>
+
+## No-tick view distance (`c2me-notickvd`)
+
+The no-tick view distance module sends chunks to clients beyond the normal simulation (tick) distance. Chunks in the no-tick zone are fully generated and lit, and players can see and walk through them, but block ticking, entity updates, and other simulation work do not run for those chunks. This keeps the server thread load proportional to the simulation distance rather than the render distance.
+
+### Extended render distance protocol
+
+Vanilla's chunk protocol uses a signed byte for chunk coordinates, which limits render distance to 127 chunks. C2ME implements an extended render distance protocol (`c2me:extRenderDistance`) that removes this cap. When both the server and client have C2ME installed and Fabric API is available, players can request render distances beyond 127 chunks.
+
+The protocol is enabled by default on both sides:
+
+| Key | Default | Description |
+|---|---|---|
+| `noTickViewDistance.enableExtRenderDistanceProtocol` | `true` | Server-side: advertise support for the extended protocol. |
+| `clientSideConfig.modifyMaxVDConfig.enableExtRenderDistanceProtocol` | `true` | Client-side: send extended render distance requests to supporting servers. |
+
+### Concurrent chunk loading
+
+No-tick view distance can generate a large number of chunk load requests at once. The `noTickViewDistance.maxConcurrentChunkLoads` option controls how many of these requests are processed simultaneously. The default is `globalExecutorParallelism * 2` — tuned to match the background thread pool size. Lower this value to reduce latency at the cost of slower area loading; raise it to load large areas faster.
+
+```toml
+[noTickViewDistance]
+maxConcurrentChunkLoads = 16   # example: 8 threads × 2
+enableExtRenderDistanceProtocol = true
+smoothChunkSendingRate = true
+```
+
+### Smooth chunk sending rate
+
+Chunk generation is bursty: many chunks can finish at nearly the same time, producing a burst of chunk packets sent to the client. This bursty delivery can cause frame time instability on the client side. `noTickViewDistance.smoothChunkSendingRate` (default: `true`) distributes the outgoing chunk stream more evenly over time, improving client frame stability when loading large areas.
+
+### Ghost mushrooms
+
+When no-tick view distance is enabled, players can see chunks that have not been fully post-processed. A known vanilla bug (MC-276863) causes mushrooms to appear in these not-yet-post-processed chunks and then disappear when the chunk enters the tick distance. `chunkSystem.suppressGhostMushrooms` (default: `true`) works around this by filtering those phantom mushrooms from non-post-processed chunks.
+
+## Thread safety fixes
+
+### Worldgen threading fixes (`c2me-fixes-worldgen-threading-issues`)
+
+When world generation runs on multiple threads, any code that accesses a shared `RandomSource` from multiple threads simultaneously will trigger a crash: `Accessing LegacyRandomSource from multiple threads`. This crash is difficult to diagnose because the source of the access is often deep in a mod's feature or structure code.
+
+`c2me-fixes-worldgen-threading-issues` instruments world random access and detects these unsafe calls. The `fixes.enforceSafeWorldRandomAccess` config key controls what happens when an unsafe access is detected:
+
+| Value | Behavior |
+|---|---|
+| `true` (default) | Throw an exception immediately, producing a clear crash with a useful stack trace. |
+| `false` | Log a warning and continue. The random source may still produce incorrect results, but the server won't crash. |
+
+```toml
+[fixes]
+enforceSafeWorldRandomAccess = true
+```
+
+It is generally not recommended to set this to `false`. The hard-fail behavior is intentional: it forces mod authors to fix the underlying thread-safety issue rather than silently corrupting world generation randomness.
+
+### General threading fixes (`c2me-fixes-general-threading-issues`)
+
+This module addresses threading hazards in parts of the game that are not specific to world generation or I/O. It is always enabled and requires no configuration.
+
+### Chunk I/O threading fixes (`c2me-fixes-chunkio-threading-issues`)
+
+This module addresses threading hazards that can occur in the chunk I/O subsystem when multiple threads access the same region file concurrently. It is always enabled and requires no configuration.
+
+### Vanilla worldgen bug fixes (`c2me-fixes-worldgen-vanilla-bugs`)
+
+This module patches known bugs in vanilla's world generation that become more visible under parallel execution. It is always enabled and requires no configuration.

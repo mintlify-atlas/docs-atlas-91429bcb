@@ -1,0 +1,96 @@
+---
+title: "Chunk system configuration"
+description: "Configure C2ME's chunk loading, scheduling, serialization, memory behavior, and compatibility options."
+---
+
+The `chunkSystem` section controls the core chunk pipeline: how chunks are loaded from disk, serialized back, how memory is managed, and how the scheduler interacts with vanilla game mechanics.
+
+## Config reference
+
+<ParamField path="chunkSystem.asyncSerialization" type="boolean" default="true">
+  Enables asynchronous serialization of chunk data.
+
+  When enabled, chunks are written to the I/O worker's queue on a background thread rather than blocking the main server thread. This is one of C2ME's primary latency improvements and should remain enabled under normal circumstances.
+</ParamField>
+
+<ParamField path="chunkSystem.recoverFromErrors" type="boolean" default="false">
+  Attempts to recover from errors encountered when loading a chunk by regenerating the chunk from scratch.
+
+  <Warning>
+    Enabling this option **will cause data loss**. Any chunk that fails to load will be silently regenerated, permanently discarding all player-built structures and other data in that chunk. Only enable this if you prefer a regenerated chunk over a server crash.
+  </Warning>
+
+  Only applies when async chunk loading is enabled.
+</ParamField>
+
+<ParamField path="chunkSystem.allowPOIUnloading" type="boolean" default="true">
+  Allows Points of Interest (POIs) to be unloaded when their associated chunk unloads.
+
+  In vanilla Minecraft, POIs are never unloaded when chunks unload. Over time, especially after generating millions of chunks in a single world instance, this causes a gradual memory leak. C2ME reloads POIs on demand or when the corresponding chunk is next loaded, so enabling this option should not change observable game behavior.
+</ParamField>
+
+<ParamField path="chunkSystem.suppressGhostMushrooms" type="boolean" default="true">
+  Works around [MC-276863](https://bugs.mojang.com/browse/MC-276863), a vanilla bug that causes mushrooms to appear visually in chunks that have not yet completed post-processing.
+
+  This bug is more visible when no-tick view distance is enabled, because that feature exposes non-post-processed chunks to players. Disabling this option has no performance benefit and is not recommended.
+</ParamField>
+
+<ParamField path="chunkSystem.syncPlayerTickets" type="boolean" default="true">
+  Synchronizes the management of player-owned chunk tickets.
+
+  In vanilla, player tickets are not always removed immediately when a player leaves an area. The lag between departure and ticket removal is typically imperceptible because vanilla's chunk throughput is low. With C2ME's increased throughput, some redstone or command-block contraptions that relied on immediate ticket removal can break. Enabling this option restores the predictable, synchronous removal behavior.
+</ParamField>
+
+<ParamField path="chunkSystem.fluidPostProcessingToScheduledTick" type="boolean" default="true">
+  Converts fluid post-processing into a scheduled tick instead of running it inline when a chunk loads.
+
+  Fluid post-processing (making water and lava flow when chunks first become active) can be very expensive during rapid chunk loading, causing MSPT spikes. Deferring this work to a scheduled tick smooths out the load.
+</ParamField>
+
+<ParamField path="chunkSystem.filterFluidPostProcessing" type="boolean" default="true">
+  Filters out unnecessary fluid post-processing tasks on world generation threads.
+
+  The world generation process creates many fluid post-processing tasks for fluids that will never flow (for example, fluids buried under solid blocks). This option applies a coarse filter to eliminate those tasks before they reach the server thread, reducing stutters during chunk generation.
+</ParamField>
+
+<ParamField path="chunkSystem.lowMemoryMode" type="boolean" default="false">
+  Aggressively unloads chunks that are not actively needed in order to reduce memory usage.
+
+  This option only applies when `useLegacyScheduling` is disabled. Enable it if your server is memory-constrained. Be aware that more aggressive unloading may increase chunk re-load frequency.
+</ParamField>
+
+<ParamField path="chunkSystem.useLegacyScheduling" type="boolean" default="false" deprecated>
+  Restores the legacy behavior of always loading all neighbor chunks when any chunk is loaded.
+
+  <Warning>
+    This option is deprecated and will be removed in a future release. Do not enable it unless you have a specific compatibility reason to do so.
+  </Warning>
+</ParamField>
+
+<ParamField path="chunkSystem.delayFullChunkEvents" type="boolean" default="false">
+  Delays full-chunk events until after the full-chunk future completes, restoring a specific NeoForge behavior.
+
+  <Warning>
+    Enabling this option **breaks vanilla behavior** and is disabled by default on Fabric. It exists solely for compatibility with NeoForge mod ecosystem expectations. Do not enable this unless you are certain your mod environment requires it.
+  </Warning>
+</ParamField>
+
+## Sample configuration
+
+```toml
+[chunkSystem]
+asyncSerialization = "default"
+recoverFromErrors = "default"
+allowPOIUnloading = "default"
+suppressGhostMushrooms = "default"
+syncPlayerTickets = "default"
+fluidPostProcessingToScheduledTick = "default"
+filterFluidPostProcessing = "default"
+lowMemoryMode = "default"
+useLegacyScheduling = "default"
+delayFullChunkEvents = "default"
+```
+
+<Note>
+  C2ME writes `"default"` as a placeholder when a key has not been explicitly set. You can replace `"default"` with `true` or `false` to override the built-in default.
+</Note>

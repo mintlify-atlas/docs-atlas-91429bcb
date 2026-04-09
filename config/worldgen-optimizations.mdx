@@ -1,0 +1,108 @@
+---
+title: "World generation optimization configuration"
+description: "Configure C2ME's density function compiler, native SIMD acceleration, and world generation safety checks."
+---
+
+The `vanillaWorldGenOptimizations` section controls two independent acceleration systems for world generation: a JVM bytecode compiler for density functions, and native SIMD libraries for math-heavy operations. The `fixes` section controls a threading safety check that helps diagnose world generation crashes.
+
+## Density function compiler
+
+Minecraft's terrain generation is driven by [density functions](https://minecraft.wiki/w/Density_function) — a datapack-defined graph of mathematical operations that determine terrain shape, biome placement, cave carving, and more. C2ME can compile these graphs to JVM bytecode at startup, allowing the JVM's JIT compiler to apply optimizations (inlining, constant folding, vectorization) that it cannot apply to the interpreted graph traversal.
+
+<ParamField path="vanillaWorldGenOptimizations.useDensityFunctionCompiler" type="boolean" default="true">
+  Compiles density functions from world generation datapacks (including vanilla generation) to JVM bytecode.
+
+  All density function types provided by vanilla Minecraft are implemented. Chunk upgrades from worlds generated before 1.18 are not compiled and fall back to the unoptimized interpreter.
+
+  Disable this only if you experience world generation crashes that disappear without C2ME, and only as a diagnostic step.
+</ParamField>
+
+## Native acceleration
+
+C2ME bundles native libraries (compiled C code) that use SIMD CPU instructions (AVX2 and optionally AVX512) to accelerate the math-intensive inner loops of world generation. These operations run on the world generation thread pool in parallel, so the benefit scales with core count.
+
+<ParamField path="vanillaWorldGenOptimizations.nativeAcceleration.enabled" type="boolean" default="true">
+  Enables the bundled native libraries for world generation acceleration.
+
+  If the native library cannot be loaded on your platform (for example, an unsupported CPU or OS), this option is silently treated as disabled. Check startup logs for messages from `C2ME opts/natives-math` if acceleration does not appear active.
+</ParamField>
+
+<ParamField path="vanillaWorldGenOptimizations.nativeAcceleration.allowAVX512" type="boolean" default="false">
+  Allows the native library to use AVX512 SIMD instructions in addition to AVX2.
+
+  <Warning>
+    AVX512 implementations in C2ME are currently generally **slower** than the AVX2 implementations on most hardware. Only enable this if you have verified through benchmarking that AVX512 is faster on your specific CPU. Enabling it blindly is likely to reduce performance.
+  </Warning>
+</ParamField>
+
+## Threading and shutdown fixes
+
+<ParamField path="fixes.enforceSafeWorldRandomAccess" type="boolean" default="true">
+  Detects unsafe off-thread access to the world's random number generator and fails hard when it occurs.
+
+  The vanilla crash "Accessing LegacyRandomSource from multiple threads" is notoriously difficult to diagnose because the stack trace rarely points to the real cause. This option intercepts the bad access earlier and throws with a more actionable stack trace pointing to the offending code.
+
+  When disabled, the hard failure is replaced with a log warning, allowing the server to continue running despite the unsafe access. This is useful as a temporary measure to keep a server up while a fix is prepared, but it is not safe for long-term use.
+
+  <Note>
+    It is generally not recommended to disable this setting. Only do so if you understand the implications and are actively working toward a proper fix.
+  </Note>
+</ParamField>
+
+## Vanilla-specific optimizations
+
+The `vanillaWorldGenOptimizations` section also contains three targeted optimizations for specific vanilla world generation subsystems. Each is enabled by default and automatically disabled when a conflicting mod is detected.
+
+<ParamField path="vanillaWorldGenOptimizations.optimizeAquifer" type="boolean" default="true">
+  Enables optimizations to Minecraft's aquifer sampler, which determines where underground water and lava bodies appear during overworld generation.
+
+  <Note>
+    Automatically disabled when [cavetweaks](https://modrinth.com/mod/cavetweaks) is present, as that mod modifies the same aquifer code.
+  </Note>
+</ParamField>
+
+<ParamField path="vanillaWorldGenOptimizations.useEndBiomeCache" type="boolean" default="true">
+  Enables a per-thread cache for End biome lookups to accelerate The End world generation.
+
+  This optimization was previously included in Lithium but was removed from it; C2ME provides it independently.
+
+  <Note>
+    Automatically disabled when [biolith](https://modrinth.com/mod/biolith) is present, as biolith provides its own biome handling for The End.
+  </Note>
+</ParamField>
+
+<ParamField path="vanillaWorldGenOptimizations.optimizeStructureWeightSampler" type="boolean" default="true">
+  Enables optimizations to the `StructureWeightSampler`, which is used during terrain shape generation near structures.
+
+  <Note>
+    Automatically disabled when `porting_lib` is present due to conflicting modifications to the same class.
+  </Note>
+</ParamField>
+
+<ParamField path="fixes.disableLoggingShutdownHook" type="boolean" default="true">
+  Disables the log4j2 shutdown hook on dedicated servers and causes the JVM to exit when the server is fully shut down.
+
+  This behavior has been the C2ME default historically. Disabling it restores the normal JVM shutdown hook sequence, which is required by some mods.
+
+  <Note>
+    Automatically disabled when [Textile Backup](https://modrinth.com/mod/textile_backup) is present, since Textile Backup requires the default shutdown hook to complete backup tasks before the JVM exits. This option has no effect when running as a Minecraft client.
+  </Note>
+</ParamField>
+
+## Sample configuration
+
+```toml
+[vanillaWorldGenOptimizations]
+useDensityFunctionCompiler = "default"
+optimizeAquifer = "default"
+useEndBiomeCache = "default"
+optimizeStructureWeightSampler = "default"
+
+  [vanillaWorldGenOptimizations.nativeAcceleration]
+  enabled = "default"
+  allowAVX512 = "default"
+
+[fixes]
+enforceSafeWorldRandomAccess = "default"
+disableLoggingShutdownHook = "default"
+```

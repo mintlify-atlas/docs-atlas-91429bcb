@@ -1,0 +1,75 @@
+---
+title: "Installation"
+description: "Install C2ME on a Fabric client or server. Requires Fabric Loader 0.18.5 or later and Java 21 or later."
+---
+
+## Requirements
+
+Before installing C2ME, make sure your environment meets the following requirements:
+
+| Requirement | Minimum version |
+|---|---|
+| Fabric Loader | 0.18.5 or later |
+| Minecraft | Latest release or latest snapshot (see [support matrix](#version-support-matrix)) |
+| Java | 21 or later |
+
+<Warning>
+  Back up your worlds before installing or updating C2ME. World data is safe under normal operation, but good backup practice is always recommended when adding or changing performance mods.
+</Warning>
+
+## Install C2ME
+
+<Steps>
+  <Step title="Download the mod JAR">
+    Download the latest C2ME release for your Minecraft version from one of the official distribution pages:
+
+    - [Modrinth](https://modrinth.com/mod/c2me-fabric) — recommended
+    - [CurseForge](https://www.curseforge.com/minecraft/mc-mods/c2me)
+
+    Make sure you pick the file that matches your exact Minecraft version. C2ME JARs are not cross-version compatible.
+  </Step>
+  <Step title="Place the JAR in your mods folder">
+    Copy the downloaded JAR into your Minecraft `mods/` directory.
+
+    ```text
+    minecraft/
+    └── mods/
+        └── c2me-fabric-<version>.jar
+    ```
+
+    If you are running a dedicated server, the `mods/` folder is in the same directory as your server JAR.
+  </Step>
+  <Step title="Launch the game">
+    Start Minecraft (or your server) with Fabric Loader. On first launch, C2ME automatically generates its configuration file at:
+
+    ```text
+    config/c2me.toml
+    ```
+
+    You do not need to edit this file to get started. The defaults are tuned to work well on most hardware.
+  </Step>
+</Steps>
+
+## Recommended companions
+
+For the best chunk performance, use C2ME alongside these mods:
+
+- **[Lithium](https://github.com/CaffeineMC/lithium-fabric)** — a general-purpose server-side optimization mod that complements C2ME's chunk work
+- **[Starlight](https://github.com/Spottedleaf/Starlight)** — a lighting engine rewrite; note that if Starlight is not present, C2ME's own `c2me-threading-lighting` module handles threaded light updates
+
+<Tip>
+  C2ME, Lithium, and Starlight are all compatible with each other and are commonly used together on performance-focused servers.
+</Tip>
+
+## Version support matrix
+
+| Minecraft version | Support level |
+|---|---|
+| Latest release | Full support — all features and bug fixes |
+| Latest snapshot | Full support — all features and bug fixes |
+| Older releases | Long-term support — critical bug fixes only |
+| Older snapshots | Not supported |
+
+<Info>
+  If you are running an older Minecraft release and encounter a bug, it may already be fixed on the latest release. Check the [issue tracker](https://github.com/RelativityMC/C2ME-fabric/issues) before opening a duplicate report.
+</Info>

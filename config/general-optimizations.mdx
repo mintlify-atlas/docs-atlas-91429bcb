@@ -1,0 +1,127 @@
+---
+title: "General optimizations configuration"
+description: "Configure mid-tick chunk tasks, auto-save strategy, and the client-side view distance cap."
+---
+
+The `generalOptimizations` section controls two server-side behaviors: running chunk pipeline work during the server tick loop, and choosing an auto-save strategy. The `clientSideConfig` section controls a client-side modification to the maximum view distance setting.
+
+## Mid-tick chunk tasks
+
+<ParamField path="generalOptimizations.midTickChunkTasksInterval" type="long" default="100000">
+  How often (in nanoseconds) C2ME executes chunk pipeline tasks during the server tick loop. Set to `-1` to disable.
+
+  Normally, chunk generation and loading work runs between server ticks. Under high server load (high MSPT), ticks take longer and the window between ticks shrinks, starving the chunk pipeline. Mid-tick chunk tasks insert chunk work execution steps *inside* the tick loop at the configured interval, ensuring chunk progress continues even when the server is under load.
+
+  Lowering this value causes chunk tasks to run more frequently within a tick, which can reduce chunk loading latency but may also raise overall MSPT when chunks are actively loading or generating. It is generally not necessary to adjust this value.
+
+  <Warning>
+    This option is **incompatible with Dimensional Threading (dimthread)**. C2ME automatically disables it when dimthread is detected.
+  </Warning>
+</ParamField>
+
+## Auto-save mode
+
+<ParamField path="generalOptimizations.autoSave.mode" type="string" default="ENHANCED">
+  Controls when the server saves chunk data to disk. Accepted values are `VANILLA`, `ENHANCED`, and `PERIODIC`.
+
+  | Mode | Behavior |
+  |---|---|
+  | `VANILLA` | Auto-save runs every tick during the tick loop, matching current vanilla behavior. |
+  | `ENHANCED` | Auto-save runs when the server has spare time after a tick completes, avoiding contention with game logic. This is the default and recommended mode. |
+  | `PERIODIC` | Auto-save runs every 6000 ticks during the tick loop, matching the behavior of Minecraft 1.17 and earlier. |
+
+  `ENHANCED` mode is designed to reduce MSPT spikes from auto-save by deferring disk writes until the tick budget is not fully consumed. If you need strict vanilla compatibility for auto-save timing, use `VANILLA`.
+
+  <Note>
+    Preserve the quotes around the value in your TOML file (e.g., `mode = "ENHANCED"`). An unquoted enum value may cause a config parse error.
+  </Note>
+</ParamField>
+
+## Client-side view distance cap
+
+<ParamField path="clientSideConfig.modifyMaxVDConfig.enabled" type="boolean" default="true">
+  Allows C2ME to raise the maximum view distance selectable in the client video settings above the vanilla cap.
+
+  <Warning>
+    This option is **incompatible with Bobby** (any version) and **Iris versions earlier than 1.10.2**. C2ME automatically disables it when either of these mods is detected.
+  </Warning>
+</ParamField>
+
+<ParamField path="clientSideConfig.modifyMaxVDConfig.maxViewDistance" type="long" default="auto (calculated from heap size)">
+  The maximum render distance value (in chunks) that C2ME allows in the client video settings slider.
+
+  The default is calculated automatically based on the JVM heap size at startup:
+
+  | Heap | Default max VD |
+  |---|---|
+  | Less than 1 GiB | 16 chunks |
+  | 1–3 GiB | 32 chunks |
+  | 3 GiB+ | Scales up to 248 chunks |
+
+  Must be a positive integer.
+</ParamField>
+
+<ParamField path="clientSideConfig.modifyMaxVDConfig.enableExtRenderDistanceProtocol" type="boolean" default="true">
+  Enables client-side support for the extended render distance protocol (`c2me:ext_render_distance_v1`), allowing the client to request render distances above 127 chunks from servers that support the protocol.
+
+  Requires Fabric API. The server must also have `noTickViewDistance.enableExtRenderDistanceProtocol` enabled. Without matching server support, this option has no effect.
+</ParamField>
+
+## Thread pool configuration
+
+These top-level config keys control C2ME's global worker thread pool, which is shared across chunk generation, I/O, and loading.
+
+<ParamField path="globalExecutorParallelism" type="long" default="auto (calculated from CPU and heap)">
+  Overrides the number of worker threads in C2ME's global thread pool.
+
+  The default is calculated by evaluating `defaultGlobalExecutorParallelismExpression`. Set this to a specific number to pin the parallelism regardless of what the expression evaluates to.
+
+  Must be a positive integer between 1 and 32767.
+</ParamField>
+
+<ParamField path="defaultGlobalExecutorParallelismExpression" type="string" default="formula based on cpus and mem_gb">
+  An [exp4j](https://www.objecthunter.net/exp4j/) expression that determines the default thread pool parallelism. The result of this expression is used as the default value for `globalExecutorParallelism` when that key is not explicitly set.
+
+  Available variables:
+  - `cpus` — number of available CPU threads
+  - `mem_gb` — JVM max heap in GiB
+  - `is_windows` — 1 if running on Windows, 0 otherwise
+  - `is_j9vm` — 1 if running on IBM J9 JVM, 0 otherwise
+  - `is_client` — 1 if running as a Minecraft client, 0 for dedicated server
+
+  The built-in default expression is:
+  ```
+  max(1, min(
+    if(is_windows, cpus / 1.6, cpus / 1.3) - if(is_client, 1, 0),
+    (mem_gb - if(is_client, 1.0, 0.5)) / 0.6
+  ))
+  ```
+</ParamField>
+
+<ParamField path="threadPoolPriority" type="long" default="4">
+  Sets the [Java thread priority](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/lang/Thread.html#setPriority(int)) for C2ME worker threads. Valid range is 1 (minimum) to 10 (maximum). The default of `4` is `Thread.NORM_PRIORITY - 1` (one below normal).
+
+  Lowering this gives the server tick thread more CPU time relative to chunk work. Raising it allows chunk work to compete more aggressively with other threads.
+</ParamField>
+
+## Sample configuration
+
+```toml
+[generalOptimizations]
+
+  [generalOptimizations.autoSave]
+  mode = "ENHANCED"
+
+midTickChunkTasksInterval = "default"
+
+[clientSideConfig]
+
+  [clientSideConfig.modifyMaxVDConfig]
+  enabled = "default"
+  maxViewDistance = "default"
+  enableExtRenderDistanceProtocol = "default"
+
+globalExecutorParallelism = "default"
+defaultGlobalExecutorParallelismExpression = "default"
+threadPoolPriority = "default"
+```

@@ -1,0 +1,91 @@
+---
+title: "Mod compatibility"
+description: "C2ME is compatible with most mods. This guide explains how compatibility is declared, what the known special cases are, and how to debug issues with custom world generators."
+---
+
+C2ME is compatible with most Fabric mods. Compatibility issues arise when a mod makes assumptions that only hold on the main thread — for example, accessing shared mutable state from world generation threads, or relying on the order in which chunks become available.
+
+## Declaring incompatible config keys from your mod
+
+If your mod is incompatible with a specific C2ME feature, you can declare that in your mod's `fabric.mod.json`. C2ME reads this metadata at startup and automatically disables the listed config keys when your mod is loaded.
+
+Add a `c2me:incompatibleConfig` array to the `custom` section:
+
+```json fabric.mod.json
+{
+  "schemaVersion": 1,
+  "id": "your-mod-id",
+  "version": "1.0.0",
+  "custom": {
+    "c2me:incompatibleConfig": [
+      "generalOptimizations.midTickChunkTasksInterval",
+      "chunkSystem.asyncSerialization"
+    ]
+  }
+}
+```
+
+Each string in the array must be a valid C2ME config key (dot-separated path matching the key in `c2me.toml`). When C2ME detects your mod, it logs a message for each disabled key and applies the incompatibility default value for that setting.
+
+<Note>
+  This mechanism is entirely passive — your mod does not need to call any C2ME API. C2ME scans all loaded mods' metadata on startup.
+</Note>
+
+## System property overrides
+
+Two system properties let you override C2ME's compatibility behavior at the JVM level. Pass them with `-D` in your JVM arguments.
+
+| Property | Effect |
+|---|---|
+| `com.ishland.c2me.base.config.ignoreIncompatibility=true` | Ignores all incompatibility flags declared by any mod or by C2ME itself. All config keys are loaded at their user-configured or default values. |
+| `c2me.base.config.override.<key>=<value>` | Forces a specific config key to the given value, regardless of any incompatibility detection. |
+
+<Warning>
+  Overriding incompatibility detection can lead to crashes or corrupted worlds. Only use these properties for debugging or when you have verified the combination is safe.
+</Warning>
+
+## Known incompatible and special-cased mods
+
+C2ME handles several known mods automatically:
+
+| Mod | What C2ME does |
+|---|---|
+| **Dimthread** | `generalOptimizations.midTickChunkTasksInterval` is forced to `-1` (disabled). Dimthread manages its own scheduling and conflicts with mid-tick chunk task flushing. |
+| **LightBench** | `c2me-threading-lighting` is automatically disabled. LightBench has its own lighting implementation that conflicts with C2ME's threaded lighting. |
+| **Bobby** | `clientSideConfig.modifyMaxVDConfig.enabled` is automatically disabled. Bobby manages its own extended view distance and conflicts with C2ME's client-side view distance modifications. |
+| **Iris < 1.10.2** | `clientSideConfig.modifyMaxVDConfig.enabled` is automatically disabled. Older Iris versions are incompatible with C2ME's max view distance changes. |
+
+These are handled directly in C2ME's source via `incompatibleMod(modId, versionPredicate)` calls — you do not need to configure anything for these to take effect.
+
+## World generation mod authors
+
+Custom world generators generally work well with C2ME, but some break because they rely on assumptions that vanilla's single-threaded generator happens to satisfy.
+
+### Common causes of breakage
+
+- **Shared mutable state in feature or structure generators** — if your generator holds any instance-level mutable state (lists, maps, counters) that is written during generation, multiple C2ME threads can race on it. Make state per-call or use thread-local storage.
+- **`LegacyRandomSource` used from multiple threads** — C2ME wraps the world random with `CheckedThreadLocalRandom`, which detects off-thread access. If your generator passes the world random to another thread (or stores it in a field accessed by multiple threads), it will crash with an "Accessing LegacyRandomSource from multiple threads" error. Use a separate `RandomSource` per thread.
+- **Ordering assumptions** — vanilla generates chunks in a predictable order on the main thread. C2ME generates chunks in parallel, so the order in which neighboring chunks become available is not guaranteed. Do not rely on chunk generation order.
+
+### Detecting unsafe random access
+
+Enable this option in `c2me.toml` to get a hard crash with a full stack trace when unsafe random access occurs:
+
+```toml c2me.toml
+[fixes]
+enforceSafeWorldRandomAccess = true  # default: true
+```
+
+When this is `true`, C2ME throws an exception immediately on illegal access, giving you a precise stack trace pointing to the offending code. Setting it to `false` demotes the crash to a warning, which lets the server continue running but may cause corrupted generation.
+
+<Tip>
+  If you are debugging your mod, keep `enforceSafeWorldRandomAccess = true`. The crash is intentional and the stack trace is the information you need.
+</Tip>
+
+Join the C2ME Discord for help making your mod C2ME-compatible: [discord.gg/Kdy8NM5HW4](https://discord.gg/Kdy8NM5HW4)
+
+## Undefined behavior sanitization
+
+C2ME includes `CheckedThreadLocalRandom`, which wraps the world random source and detects accesses from threads other than the one that created the random. This is the same detection used by [UWRAD](https://modrinth.com/mod/uwrad).
+
+The detection **almost never produces false positives**. If you see a crash or warning pointing at a mod, it means that mod is genuinely accessing world random off-thread. Report it to that mod's author with the full stack trace — do not disable the detection as a first response.

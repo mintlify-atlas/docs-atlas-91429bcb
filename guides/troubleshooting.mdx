@@ -1,0 +1,155 @@
+---
+title: "Troubleshooting"
+description: "Solutions for common issues with C2ME, from threading crashes to memory pressure."
+---
+
+<AccordionGroup>
+  <Accordion title='"Accessing LegacyRandomSource from multiple threads" crash'>
+    **What is happening:** C2ME's `CheckedThreadLocalRandom` detected a mod accessing the world random source from a thread other than the one that created it. This is a bug in that mod, not in C2ME.
+
+    **What to do:**
+
+    1. Capture the full crash log including the stack trace.
+    2. Identify the mod shown in the stack trace and report the issue to that mod's author, including the full trace.
+    3. Wait for the mod to be fixed.
+
+    **Temporary workaround:** You can downgrade the crash to a warning while waiting for a fix. Set the following in `c2me.toml`:
+
+    ```toml c2me.toml
+    [fixes]
+    enforceSafeWorldRandomAccess = false
+    ```
+
+    Or pass this as a JVM argument without editing the config:
+
+    ```bash
+    -Dc2me.base.config.override.fixes.enforceSafeWorldRandomAccess=false
+    ```
+
+    <Warning>
+      Disabling this check allows the unsafe access to proceed silently. The affected mod may still generate corrupted or inconsistent terrain — the workaround only prevents the crash, not the underlying problem.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="Chunks generate differently each run (non-determinism)">
+    **What is happening:** World generation in vanilla Minecraft is [not deterministic](https://bugs.mojang.com/browse/MC-55596) (MC-55596). Two runs with the same seed can produce different worlds because of timing-dependent randomness in the generator.
+
+    C2ME's parallel generation increases the visibility of this existing non-determinism because chunk generation order is no longer fixed. Worlds generated with C2ME will vary between runs — this is expected and is not a C2ME bug.
+
+    **There is no fix for this** — it is inherent to vanilla's world generation design. If you need reproducible worlds for testing, generate without C2ME on a reference run, then note that the C2ME run will differ.
+  </Accordion>
+
+  <Accordion title='Server watchdog triggers / "Did the system time change?" warning'>
+    **What is happening:** C2ME's chunk loading can temporarily raise MSPT during heavy generation, causing the server watchdog to fire or produce the "Did the system time change?" message.
+
+    **Things to try:**
+
+    1. Increase `midTickChunkTasksInterval` to reduce how aggressively chunk tasks interrupt the tick:
+
+       ```toml c2me.toml
+       [generalOptimizations]
+       midTickChunkTasksInterval = 500000  # nanoseconds, default is 100000
+       ```
+
+    2. Or disable mid-tick chunk task flushing entirely:
+
+       ```toml c2me.toml
+       [generalOptimizations]
+       midTickChunkTasksInterval = -1
+       ```
+
+    3. Switch auto-save to `PERIODIC` mode to reduce I/O impact on the tick loop:
+
+       ```toml c2me.toml
+       [generalOptimizations.autoSave]
+       mode = "PERIODIC"
+       ```
+
+    4. If this only happens during active exploration or pregeneration, pregenerate the world before opening it to players (see the [performance tuning guide](/guides/performance-tuning)).
+  </Accordion>
+
+  <Accordion title="A specific mod is broken with C2ME">
+    **What to do:**
+
+    1. Check the [mod compatibility guide](/guides/mod-compatibility) for known incompatible mods and automatic workarounds.
+    2. If the broken mod is a world generator, read the [world generation mod authors](/guides/mod-compatibility#world-generation-mod-authors) section — the most common cause is thread-unsafe code.
+    3. Try disabling C2ME modules one at a time to narrow down which module causes the conflict. You can disable individual config keys using system property overrides:
+
+       ```bash
+       -Dc2me.base.config.override.chunkSystem.asyncSerialization=false
+       ```
+
+    4. If you identify the conflict, report it with the full crash log to the [C2ME issue tracker](https://github.com/RelativityMC/C2ME-fabric/issues). Include:
+       - The full `latest.log` or `crash-*.txt`
+       - Your `config/c2me.toml`
+       - A list of all installed mods and their versions
+  </Accordion>
+
+  <Accordion title="c2me.toml was reset after an update">
+    **What is happening:** C2ME resets its config when the config schema version changes. The current config version is `3`. When C2ME detects a version mismatch (for example, after a major update), it clears the file and writes the new defaults, logging:
+
+    ```
+    Config version mismatch, resetting config
+    ```
+
+    This is intentional — old config keys may no longer exist or may have changed meaning.
+
+    **What to do:** Re-apply your customizations after the update. Use the [configuration reference](/config/overview) to find the correct keys for the new version.
+  </Accordion>
+
+  <Accordion title="Native acceleration not loading">
+    **What is happening:** C2ME's native math library (`c2me-opts-natives-math`) failed to load. This is usually logged at startup by the `NativeLoader` class.
+
+    **Things to check:**
+
+    1. Look for errors from `NativeLoader` in `logs/latest.log`. The message explains what failed (missing libraries, unsupported OS, etc.).
+    2. The bundled native library was compiled with Clang 18+. If you built C2ME yourself and used an older Clang, rebuild with a supported version.
+    3. C2ME falls back to pure Java implementations automatically when the native library fails to load. World generation still works — it is just slower.
+
+    To explicitly disable native acceleration:
+
+    ```toml c2me.toml
+    [vanillaWorldGenOptimizations.nativeAcceleration]
+    enabled = false
+    ```
+  </Accordion>
+
+  <Accordion title="High memory usage">
+    C2ME's chunk I/O cache and in-flight chunk data can use significant memory during heavy load. Try these settings to reduce memory consumption:
+
+    **Reduce the I/O cache size:**
+
+    ```toml c2me.toml
+    [ioSystem]
+    chunkDataCacheSoftLimit = 2048   # default: 8192
+    chunkDataCacheLimit = 8192       # default: 32678
+    ```
+
+    **Enable low memory mode to aggressively unload idle chunks:**
+
+    ```toml c2me.toml
+    [chunkSystem]
+    lowMemoryMode = true
+    ```
+
+    **Reduce concurrent no-tick chunk loads:**
+
+    ```toml c2me.toml
+    [noTickViewDistance]
+    maxConcurrentChunkLoads = 8   # default: parallelism * 2
+    ```
+
+    <Note>
+      These settings trade throughput for memory. Apply them gradually and monitor both memory usage and chunk loading speed.
+    </Note>
+  </Accordion>
+</AccordionGroup>
+
+---
+
+If none of the above resolves your issue, get help from the community:
+
+- **Discord:** [discord.gg/Kdy8NM5HW4](https://discord.gg/Kdy8NM5HW4)
+- **Issue tracker:** [github.com/RelativityMC/C2ME-fabric/issues](https://github.com/RelativityMC/C2ME-fabric/issues)
+
+When reporting a bug, always include the full `logs/latest.log`, your `config/c2me.toml`, and the complete list of installed mods.

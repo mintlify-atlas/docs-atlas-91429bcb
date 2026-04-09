@@ -1,0 +1,82 @@
+---
+title: "Native math acceleration"
+description: "C2ME bundles a native C library that uses SIMD instructions to accelerate noise sampling. Allocation and math optimizations provide Java fallbacks for unsupported platforms."
+---
+
+World generation involves heavy floating-point math: noise sampling, density function evaluation, and biome blending all run millions of times per generated chunk. C2ME accelerates these operations at two levels: a bundled native library that uses CPU SIMD instructions (`c2me-opts-natives-math`), and pure-Java fallbacks that improve performance even when the native library is unavailable (`c2me-opts-math`, `c2me-opts-allocs`).
+
+## Native library (`c2me-opts-natives-math`)
+
+### What it accelerates
+
+The native library accelerates noise sampling and other math-heavy world generation operations by processing multiple values in parallel using SIMD (Single Instruction, Multiple Data) CPU instructions. Instead of computing one noise sample per instruction, SIMD registers can compute 4, 8, or 16 samples simultaneously depending on the instruction set available.
+
+### Bundled library
+
+The native component is a C library compiled with Clang 18 or later and bundled inside the C2ME jar. At startup, C2ME extracts the library for the detected OS and architecture to a temporary file and loads it via Java's Foreign Function & Memory API (introduced in JDK 21). If the library cannot be loaded — for example, on an unsupported platform or JVM — C2ME logs a warning and falls back to Java implementations gracefully.
+
+Supported platforms:
+- **Linux x86-64** (primary target)
+- **Linux AArch64** (ARM servers, Apple Silicon via Rosetta or native ARM JDK)
+- **macOS** (osx)
+- **Windows**
+
+### ISA target selection
+
+On x86-64, the library is compiled for multiple instruction set targets. C2ME calls the native function `c2me_natives_get_system_isa` at startup to detect the highest ISA level supported by your CPU:
+
+| ISA target | Description |
+|---|---|
+| SSE2 | Baseline x86-64 SIMD (all 64-bit x86 CPUs) |
+| SSE4.2 | Improved comparisons and CRC32 |
+| AVX | 256-bit floating-point vectors |
+| AVX2 | 256-bit integer + FP vectors (recommended) |
+| AVX2ADL | AVX2 with Alder Lake extensions |
+| AVX512SKX/ICL/SPR | 512-bit vectors (Skylake-X, Ice Lake, Sapphire Rapids) |
+
+C2ME automatically selects the best supported target. You do not need to configure this manually.
+
+On AArch64, the library uses ARM NEON/SVE instructions.
+
+### AVX512 note
+
+<Warning>
+  AVX512 implementations in C2ME are generally **slower** than AVX2 on most hardware. This is due to CPU frequency throttling: many Intel processors reduce their all-core turbo frequency when executing AVX512 instructions, which can hurt overall throughput even though the per-instruction width is wider.
+
+  Do not enable `vanillaWorldGenOptimizations.nativeAcceleration.allowAVX512` unless you have benchmarked your specific CPU and confirmed that AVX512 is faster for your workload.
+</Warning>
+
+### Configuration
+
+```toml
+[vanillaWorldGenOptimizations.nativeAcceleration]
+enabled = true
+allowAVX512 = false
+```
+
+| Key | Default | Description |
+|---|---|---|
+| `vanillaWorldGenOptimizations.nativeAcceleration.enabled` | `true` | Load and use the bundled native library. |
+| `vanillaWorldGenOptimizations.nativeAcceleration.allowAVX512` | `false` | Allow detection and use of AVX512 ISA targets. |
+
+Setting `enabled` to `false` disables the native library entirely and falls back to Java implementations. The `allowAVX512` key only takes effect when `enabled` is `true` and an AVX512-capable CPU is detected.
+
+### Build requirement
+
+If you compile C2ME from source, Clang 18 or later is required to build the native components. The native library is pre-built and bundled in official release jars, so most users do not need Clang installed. See [Building from source](/guides/building-from-source) for details.
+
+## Allocation optimizations (`c2me-opts-allocs`)
+
+Chunk generation creates a large number of short-lived objects: noise samplers, density function evaluation contexts, block position holders, and more. Each allocation increases pressure on the JVM's garbage collector, which can cause periodic GC pauses that manifest as brief stutter during generation.
+
+`c2me-opts-allocs` reduces these allocations by reusing objects across generation tasks where possible. This module is always enabled and requires no configuration.
+
+## Math optimizations (`c2me-opts-math`)
+
+`c2me-opts-math` provides pure-Java implementations of math routines optimized for world generation workloads. These serve as the fallback when the native library is not available (unsupported platform, native loading failure, or `nativeAcceleration.enabled = false`).
+
+This module is always enabled and requires no configuration. When the native library is active, these Java implementations are largely bypassed in favor of native code, but they remain available as a safe fallback path.
+
+<Tip>
+  You can check whether native acceleration loaded successfully by looking at the server log during startup. C2ME logs the detected ISA target, for example: `Detected maximum supported ISA target: AVX2`. If the native library failed to load, you will see a warning and the module will fall back to Java math automatically.
+</Tip>

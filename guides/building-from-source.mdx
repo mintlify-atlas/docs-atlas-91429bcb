@@ -1,0 +1,94 @@
+---
+title: "Building from source"
+description: "Build C2ME from source for development, testing unreleased changes, or contributing a patch."
+---
+
+## Requirements
+
+You need the following tools installed before starting:
+
+| Tool | Minimum version | Notes |
+|---|---|---|
+| JDK | 22 or newer | Required to compile C2ME's Java sources |
+| Clang | 18 or newer | Required to compile the native math library (`c2me-opts-natives-math`) |
+| Git | Any recent version | Must support submodules (`--recursive` / `submodule update`) |
+
+<Note>
+  The native math library requires Clang at build time, but the resulting JAR bundles the compiled native library. End users do not need Clang to run C2ME.
+</Note>
+
+## Build steps
+
+<Steps>
+  <Step title="Clone the repository with submodules">
+    C2ME depends on [FlowSched](https://github.com/ishland/FlowSched) as a Git submodule. You must initialize it before the build will succeed.
+
+    If you are cloning for the first time:
+
+    ```bash
+    git clone --recursive https://github.com/RelativityMC/C2ME-fabric.git
+    cd C2ME-fabric
+    ```
+
+    If you have already cloned the repository without `--recursive`:
+
+    ```bash
+    git submodule update --init --recursive
+    ```
+  </Step>
+  <Step title="Run the build">
+    From the root of the repository, run the Gradle wrapper:
+
+    ```bash
+    # Linux / macOS
+    ./gradlew clean build
+
+    # Windows
+    gradlew.bat clean build
+    ```
+
+    The first build downloads Minecraft, the mappings, and all dependencies from Maven. This can take several minutes depending on your connection speed. Subsequent builds are faster because Gradle caches the downloads.
+  </Step>
+  <Step title="Locate the built JAR">
+    Gradle places the final remapped JAR in `build/libs/`. The file you want is named:
+
+    ```
+    c2me-fabric-mc<minecraft_version>-<mod_version>.<commit_count>.jar
+    ```
+
+    Ignore files ending in `-sources.jar` or `-dev.jar` — those are for IDE use, not for installing.
+
+    Example (with Minecraft 26.1.1 and mod version 0.3.7+alpha.0):
+
+    ```
+    build/libs/c2me-fabric-mc26.1.1-0.3.7+alpha.0.42.jar
+    ```
+  </Step>
+</Steps>
+
+## Key gradle.properties values
+
+The following properties in `gradle.properties` control what gets built:
+
+| Property | Current value | Description |
+|---|---|---|
+| `minecraft_version` | `26.1.1` | The Minecraft version C2ME targets |
+| `yarn_mappings` | `26.1.1+build.1` | Yarn mapping set used for decompilation and development |
+| `loader_version` | `0.18.5` | Minimum Fabric Loader version |
+| `mod_version` | `0.3.7+alpha.0` | C2ME's own version number |
+
+Do not change these unless you are porting C2ME to a different Minecraft version.
+
+## Generating decompiled Minecraft sources (optional)
+
+If you want to navigate Minecraft's decompiled source inside your IDE, run:
+
+```bash
+./gradlew genSources
+```
+
+This generates Vineflower-decompiled sources in the Gradle cache and registers them with your IDE project. It is not required to compile or run C2ME — it is only for developer convenience.
+
+## Submodule note
+
+The `FlowSched` directory at the root is an [included build](https://docs.gradle.org/current/userguide/composite_builds.html) submodule. Gradle resolves it as a local project substitution for the `com.ishland.flowsched:flowsched` dependency. If you see errors like `Could not resolve com.ishland.flowsched:flowsched`, the submodule was not initialized — re-run `git submodule update --init --recursive`.

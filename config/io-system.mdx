@@ -1,0 +1,71 @@
+---
+title: "I/O system configuration"
+description: "Configure C2ME's chunk I/O NBT cache to balance memory usage against disk read frequency."
+---
+
+The `ioSystem` section controls the async chunk I/O implementation, the in-memory cache for chunk NBT data, and an experimental reduced-allocation serializer.
+
+## I/O implementation
+
+<ParamField path="ioSystem.replaceImpl" type="boolean" default="true">
+  Enables C2ME's optimized async chunk I/O implementation, replacing the vanilla `StorageIoWorker` with one that performs reads and writes on background threads.
+
+  Disabling this reverts to vanilla's synchronous I/O behavior. This option exists primarily as an escape hatch if the async implementation causes a compatibility issue. In normal operation, it should remain enabled.
+</ParamField>
+
+<ParamField path="ioSystem.gcFreeChunkSerializer" type="boolean" default="false">
+  Enables an experimental reduced-allocation chunk serializer that restructures how NBT is built when saving chunks, reducing heap churn and GC pressure.
+
+  <Warning>
+    This is an **experimental feature**. Keep regular world backups when it is enabled and report any data integrity issues to the [C2ME GitHub](https://github.com/RelativityMC/C2ME-fabric/issues). Automatically disabled when [Architectury](https://modrinth.com/mod/architectury-api) is present due to incompatibility.
+  </Warning>
+</ParamField>
+
+## How the cache works
+
+The I/O worker keeps recently read chunk NBT data in memory. When a chunk is requested again, the worker can return the cached data immediately without reading from disk. The cache has two size thresholds:
+
+- **Soft limit** — when the cache reaches this size, the worker begins evicting the least-recently-used entries in the background.
+- **Hard limit** — the absolute maximum number of entries the cache will hold. Entries are evicted synchronously once this limit is reached.
+
+Setting the soft limit close to the hard limit gives the eviction thread less time to run before the hard cap is hit. Setting it significantly lower gives the background evictor more headroom to run asynchronously, which reduces the chance of blocking the I/O worker thread.
+
+## Config reference
+
+<ParamField path="ioSystem.chunkDataCacheSoftLimit" type="long" default="8192">
+  Soft limit for the I/O worker's NBT cache, measured in number of cached entries.
+
+  When the cache size reaches this threshold, background eviction of least-recently-used entries begins. Must be a positive integer.
+</ParamField>
+
+<ParamField path="ioSystem.chunkDataCacheLimit" type="long" default="32678">
+  Hard limit for the I/O worker's NBT cache, measured in number of cached entries.
+
+  The cache will not grow beyond this size. Eviction is forced synchronously once this threshold is reached. Must be a positive integer.
+
+  <Note>
+    The hard limit default (`32678`) is intentionally higher than the soft limit default (`8192`) to give the background evictor room to operate. In most cases the defaults are appropriate. Raise the hard limit only if you have profiled your server and confirmed that cache eviction is a bottleneck.
+  </Note>
+</ParamField>
+
+## Tuning guidance
+
+| Scenario | Recommendation |
+|---|---|
+| Default / general use | Leave both values at their defaults |
+| Low memory server | Lower both limits proportionally (e.g., soft: `2048`, hard: `8192`) |
+| High player count, large view distance | Consider raising both limits if disk I/O is a bottleneck |
+
+<Warning>
+  Setting the hard limit below the soft limit is not recommended and may produce unpredictable eviction behavior.
+</Warning>
+
+## Sample configuration
+
+```toml
+[ioSystem]
+replaceImpl = "default"
+gcFreeChunkSerializer = "default"
+chunkDataCacheSoftLimit = "default"
+chunkDataCacheLimit = "default"
+```

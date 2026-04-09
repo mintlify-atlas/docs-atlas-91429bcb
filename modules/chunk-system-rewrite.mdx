@@ -1,0 +1,77 @@
+---
+title: "Chunk system rewrite"
+description: "C2ME replaces Minecraft's single-threaded chunk scheduler with a parallel implementation backed by FlowSched, enabling async chunk loading, serialization, and POI management."
+---
+
+The chunk system rewrite is the centerpiece of C2ME. It touches three modules — `c2me-rewrites-chunk-system`, `c2me-rewrites-chunkio`, and `c2me-rewrites-chunk-serializer` — and replaces the parts of Minecraft's chunk pipeline most responsible for server stutters and slow world generation.
+
+## The vanilla chunk pipeline problem
+
+Vanilla Minecraft's chunk system is fundamentally single-threaded in its scheduling layer. The `ServerChunkLoadingManager` (TACS) advances chunk statuses — from unloaded through generation stages to fully loaded — in a linear dependency graph. When a chunk needs neighbors to be generated first, the entire pipeline stalls waiting for each dependency to complete before the next step can start.
+
+This blocking behavior means:
+- High view distances quickly saturate the single server thread
+- World pre-generation tools like Chunky stall the server tick loop
+- Loading a player into a new area causes visible lag spikes as chunks queue up
+
+## What the rewrite does
+
+### Parallel chunk scheduling (`c2me-rewrites-chunk-system`)
+
+C2ME replaces the vanilla chunk scheduler with `TheChunkSystem`, a `StatusAdvancingScheduler` backed by [FlowSched](https://github.com/ishland/FlowSched). FlowSched is a dependency-aware task scheduler that tracks which chunks depend on which neighbors and executes independent work in parallel on a background thread pool (`ChunkSystemExecutors`).
+
+Chunks progress through `NewChunkStatus` stages. When a chunk requires neighbors at a given radius (for example, feature generation requires a 1-chunk border), FlowSched automatically schedules all dependencies in parallel and only advances the target chunk once its dependencies are satisfied — without blocking any thread.
+
+### Async chunk I/O (`c2me-rewrites-chunkio`)
+
+The rewritten I/O layer moves chunk reads and writes off the main server thread. The config key `ioSystem.replaceImpl` controls whether this optimized implementation is active (default: `true`).
+
+### GC-friendly chunk serializer (`c2me-rewrites-chunk-serializer`)
+
+The optional chunk serializer (`ioSystem.gcFreeChunkSerializer`) reduces object allocations when saving chunks by restructuring how NBT is built. It is disabled by default because it may conflict with mods that depend on the standard serialization path (notably Architectury-based mods, which are automatically detected and trigger the incompatibility fallback).
+
+<Warning>
+  `ioSystem.gcFreeChunkSerializer` is experimental. Keep regular backups of your world when this option is enabled, and report any world data issues on the C2ME GitHub.
+</Warning>
+
+## Fluid post-processing optimization
+
+Fluid post-processing is one of the most expensive operations when chunks first load, because newly generated chunks can contain thousands of fluid source blocks that each need to check whether they should flow. C2ME applies two independent filters:
+
+- **`chunkSystem.fluidPostProcessingToScheduledTick`** (default: `true`) — Defers fluid expansion to the scheduled tick system instead of processing it immediately on the chunk load thread. This spreads the cost over multiple server ticks rather than paying it all at once when a chunk transitions to full status.
+- **`chunkSystem.filterFluidPostProcessing`** (default: `true`) — Applies a conservative filter on world generation threads that discards fluid post-processing tasks for blocks that are definitely not going to flow (for example, a water source surrounded by solid blocks on all sides). This reduces the number of tasks that reach the server thread at all.
+
+Both filters are independent and complementary. On servers that generate many new chunks continuously (for example, during a pregenerator run), these two options together can meaningfully reduce MSPT spikes.
+
+## Key configuration options
+
+Refer to the [Chunk system config](/config/chunk-system) page for the full reference. The most relevant options for the rewrite are:
+
+| Key | Default | Description |
+|---|---|---|
+| `chunkSystem.asyncSerialization` | `true` | Serialize chunks on background threads instead of the main thread. |
+| `chunkSystem.allowPOIUnloading` | `true` | Unload POI data when chunks unload. See [POI note](#poi-unloading) below. |
+| `chunkSystem.syncPlayerTickets` | `true` | Synchronize player ticket removal for contraption compatibility. |
+| `chunkSystem.fluidPostProcessingToScheduledTick` | `true` | Defer fluid post-processing to scheduled ticks. |
+| `chunkSystem.filterFluidPostProcessing` | `true` | Filter out no-flow fluids from worldgen thread post-processing. |
+| `chunkSystem.lowMemoryMode` | `false` | Aggressively unload unused chunks. Only applies when `useLegacyScheduling` is `false`. |
+| `ioSystem.replaceImpl` | `true` | Use the async chunk I/O implementation. |
+| `ioSystem.gcFreeChunkSerializer` | `false` | Use the reduced-allocation chunk serializer (experimental). |
+
+## POI unloading
+
+Vanilla Minecraft never unloads Points of Interest (POIs — used by villagers, nether portals, and other game features) when chunks unload. Over time, on servers that generate millions of chunks, this causes a persistent memory leak that can eventually destabilize the server.
+
+C2ME's `chunkSystem.allowPOIUnloading` (default: `true`) fixes this by evicting POI data from memory when the corresponding chunk unloads. POI data is reloaded on demand when a chunk is loaded again, which is transparent to game mechanics.
+
+## Player ticket synchronization
+
+Because the rewritten chunk system has significantly higher throughput than vanilla, the delay between a player leaving an area and the associated chunk tickets being removed is amplified. Some contraptions rely on the near-instant ticket removal that vanilla's slow chunk loading implicitly provided. `chunkSystem.syncPlayerTickets` (default: `true`) restores predictable synchronous ticket removal, improving compatibility with those contraptions.
+
+## Vanilla parity
+
+C2ME's chunk system rewrite is designed to produce the same world as vanilla. All chunk status transitions follow the same dependency rules, and the same biome and structure data is written to disk. The rewrite does not change what gets generated — only the order and threading with which generation work is executed.
+
+<Note>
+  `chunkSystem.recoverFromErrors` (default: `false`) causes errored chunks to be regenerated from scratch rather than crashing the server. Because regeneration discards any existing data for the affected chunk, this option is disabled by default. Enable it only if you prefer automatic recovery over explicit error reporting.
+</Note>

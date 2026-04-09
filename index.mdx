@@ -1,97 +1,55 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "C2ME-fabric"
+description: "A Fabric mod designed to improve the chunk performance of Minecraft by leveraging multi-core parallelism."
 ---
 
-## Setting up
+C^2M-Engine (C2ME) is a Fabric mod that accelerates Minecraft chunk generation, I/O, and loading by running work across multiple CPU cores in parallel. Whether you're running a large server or a single-player world, C2ME helps the game keep up with your view distance demands without sacrificing vanilla behavior.
 
-Get your documentation site up and running in minutes.
-
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/installation">
+    Get C2ME installed on your Fabric server or client in minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Configuration" icon="sliders" href="/config/overview">
+    Tune C2ME's behavior to match your hardware and workload.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Module overview" icon="puzzle-piece" href="/modules/overview">
+    Understand what each C2ME module does and how they work together.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Performance tuning" icon="gauge-high" href="/guides/performance-tuning">
+    Get the most out of C2ME with hardware-specific recommendations.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## What C2ME does
 
-Everything you need to create world-class documentation.
+C2ME targets the three most expensive parts of Minecraft's chunk pipeline:
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+- **Chunk generation** — world terrain, biomes, structures, and features are generated in parallel across multiple threads instead of one at a time
+- **Chunk I/O** — reading and writing chunk data to disk is handled asynchronously, keeping the main server thread free
+- **Chunk loading** — the chunk system scheduler is rewritten to maximize throughput and reduce latency
 
-## Need inspiration?
+<CardGroup cols={2}>
+  <Card title="Mod compatibility" icon="shield-check" href="/compatibility">
+    Check which mods work alongside C2ME and known limitations.
+  </Card>
+  <Card title="Building from source" icon="code" href="/guides/building-from-source">
+    Compile C2ME yourself with JDK 22 and Clang 18.
+  </Card>
+  <Card title="Troubleshooting" icon="wrench" href="/guides/troubleshooting">
+    Diagnose and resolve common issues after installing C2ME.
+  </Card>
+  <Card title="Mod compatibility guide" icon="plug" href="/guides/mod-compatibility">
+    Learn how to declare incompatible config keys from your own mod.
+  </Card>
+</CardGroup>
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+## Recommended companions
+
+For best performance, use C2ME alongside:
+
+- **[Lithium](https://github.com/CaffeineMC/lithium-fabric)** — general-purpose server optimization mod
+- **[Starlight](https://github.com/Spottedleaf/Starlight)** — lighting engine rewrite
+
+<Note>
+  Always back up your worlds before installing or updating C2ME. World data is safe under normal operation, but good backup hygiene is always recommended when using performance mods.
+</Note>

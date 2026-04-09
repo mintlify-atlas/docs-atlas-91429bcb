@@ -1,0 +1,54 @@
+---
+title: "No-tick view distance configuration"
+description: "Configure how C2ME sends chunks beyond the simulation distance to clients, including extended render distance support."
+---
+
+No-tick view distance (no-tick VD) is a feature that sends chunks to clients beyond the server's normal simulation distance without actually ticking those chunks. Players can see a larger world around them, but mobs, redstone, and other game mechanics only run within the simulation distance. This allows servers to provide a visually rich environment without the CPU cost of simulating a much larger world.
+
+<Info>
+  No-tick view distance is managed by the `notickvd` module. The chunks sent via no-tick VD are loaded to a reduced status (not fully post-processed), which is why `chunkSystem.suppressGhostMushrooms` exists to work around MC-276863.
+</Info>
+
+## Config reference
+
+<ParamField path="noTickViewDistance.maxConcurrentChunkLoads" type="long" default="globalExecutorParallelism × 2">
+  Maximum number of chunk loads that the no-tick view distance system will process concurrently.
+
+  The default value is twice the parallelism of C2ME's global thread pool, which is typically twice the number of available CPU threads. Lowering this value reduces the burst load on the chunk pipeline and can improve response latency for individual requests at the cost of slower overall throughput. Raising it can improve throughput when many players are moving simultaneously.
+
+  Must be a positive integer.
+</ParamField>
+
+<ParamField path="noTickViewDistance.enableExtRenderDistanceProtocol" type="boolean" default="true">
+  Enables server-side support for the extended render distance protocol (`c2me:ext_render_distance`).
+
+  Vanilla Minecraft's protocol caps render distance at 127 chunks. The extended protocol allows clients that support it to request render distances above 127 chunks. This requires Fabric API to be present on the server.
+
+  <Note>
+    This option only affects clients that implement the `c2me:ext_render_distance` protocol. Vanilla clients and clients without the extended protocol support are unaffected and will still be limited to 127 chunks.
+  </Note>
+</ParamField>
+
+<ParamField path="noTickViewDistance.smoothChunkSendingRate" type="boolean" default="true">
+  Attempts to smooth out the rate at which chunks are delivered to clients.
+
+  Chunks reach full status in bursts as world generation completes regions of terrain. Without smoothing, the server sends these bursts of chunks directly to clients, which can cause brief frame time spikes on the client side as it processes many chunks at once. Enabling this option spreads chunk delivery over time to produce a steadier stream, improving client-side frame stability.
+</ParamField>
+
+<ParamField path="noTickViewDistance.ensureChunkCorrectness" type="boolean" default="false">
+  Sends each chunk within the normal render distance twice to ensure the client has the most up-to-date version.
+
+  <Warning>
+    Enabling this option **doubles the network traffic** for chunk data within the simulation distance. Only enable it if you are observing chunk correctness issues (for example, chunks appearing stale or incorrect on clients) and have confirmed that the increased network load is acceptable.
+  </Warning>
+</ParamField>
+
+## Sample configuration
+
+```toml
+[noTickViewDistance]
+maxConcurrentChunkLoads = "default"
+enableExtRenderDistanceProtocol = "default"
+smoothChunkSendingRate = "default"
+ensureChunkCorrectness = "default"
+```
